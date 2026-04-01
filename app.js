@@ -11,19 +11,10 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [isClient, setIsClient] = useState(false);
-  const [renderAmis, setRenderAmis] = useState(null);
 
   useEffect(() => {
     setIsClient(true);
   }, []);
-
-  useEffect(() => {
-    // 只在浏览器端加载 amis：避免 SSR 阶段访问 document
-    if (!isClient) return;
-    import("amis").then(mod => {
-      if (typeof mod?.render === "function") setRenderAmis(() => mod.render);
-    });
-  }, [isClient]);
 
   const userMessagesForBackend = useMemo(() => {
     // 只把用户消息喂给模型；模型会在后端根据 base schema 做“更新/生成完整schema”
@@ -68,7 +59,7 @@ export default function App() {
           {
             id: uid(),
             role: "assistant",
-            content: "已根据对话生成/更新 AMIS 页面 Schema（下方展示）。",
+            content: "已根据对话生成/更新页面 Schema（下方展示）。",
           },
         ]);
       } else {
@@ -95,7 +86,7 @@ export default function App() {
 
   return (
     <div style={{ maxWidth: 920, margin: "28px auto", fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, sans-serif" }}>
-      <h2 style={{ marginBottom: 16 }}>Copilot 对话式 Schema 生成器（AMIS）</h2>
+      <h2 style={{ marginBottom: 16 }}>Copilot 对话式 Schema 生成器</h2>
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, alignItems: "start" }}>
         <div style={{ border: "1px solid #eee", borderRadius: 10, padding: 14 }}>
@@ -176,17 +167,10 @@ export default function App() {
         </div>
 
         <div style={{ border: "1px solid #eee", borderRadius: 10, padding: 14 }}>
-          <div style={{ marginBottom: 10, fontWeight: 600 }}>AMIS 渲染预览</div>
+          <div style={{ marginBottom: 10, fontWeight: 600 }}>生成的 Schema 预览</div>
           {schema ? (
-            <div style={{ border: "1px solid #eee", borderRadius: 10, padding: 12, background: "#fff" }}>
-              {renderAmis ? renderAmis({ schema }) : <div style={{ color: "#aaa" }}>渲染中...</div>}
-            </div>
-          ) : (
-            <div style={{ color: "#aaa", padding: 10 }}>Schema 生成结果会展示在这里</div>
-          )}
-          {schema ? (
-            <details style={{ marginTop: 14 }}>
-              <summary style={{ cursor: "pointer", color: "#666" }}>查看生成的 Schema JSON</summary>
+            <details style={{ border: "1px solid #eee", borderRadius: 10, padding: 12, background: "#fff" }}>
+              <summary style={{ cursor: "pointer", color: "#666" }}>点击查看生成的 Schema</summary>
               <pre
                 style={{
                   marginTop: 10,
@@ -203,7 +187,9 @@ export default function App() {
                 {JSON.stringify(schema, null, 2)}
               </pre>
             </details>
-          ) : null}
+          ) : (
+            <div style={{ color: "#aaa", padding: 10 }}>Schema 生成结果会展示在这里</div>
+          )}
         </div>
       </div>
     </div>

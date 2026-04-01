@@ -157,8 +157,8 @@ export default async function handler(req, res) {
   // 读取组件配置信息
   let componentHint = "";
   try {
-    // 直接读取 Markdown 格式的组件配置文件
-    const componentConfigPath = path.join(process.cwd(), 'config', 'components', 'index.md');
+    // 读取组件配置文件（从components文件夹）
+    const componentConfigPath = path.join(process.cwd(), 'config', 'components', 'component-config.md');
     const componentConfigData = fs.readFileSync(componentConfigPath, 'utf8');
     
     // 处理 Markdown 格式的组件配置
@@ -166,19 +166,20 @@ export default async function handler(req, res) {
     const lines = componentConfigData.split('\n');
     const components = [];
     let currentComponent = null;
-    let inComponentsSection = false;
+    let inComponentsSection = true; // 组件配置文件直接从组件开始
     
     for (const line of lines) {
       const trimmedLine = line.trim();
       
-      // 检测是否进入内置组件列表部分
-      if (trimmedLine === '## 内置组件列表') {
-        inComponentsSection = true;
+      // 跳过标题行
+      if (trimmedLine === '# 低代码平台内置组件配置') {
         continue;
       }
       
-      // 跳过非组件列表部分
-      if (!inComponentsSection) continue;
+      // 跳过分类标题行
+      if (trimmedLine.startsWith('## ') && trimmedLine.endsWith('类组件')) {
+        continue;
+      }
       
       // 检测组件标题行（以####开头）
       if (trimmedLine.startsWith('#### ')) {
@@ -190,11 +191,18 @@ export default async function handler(req, res) {
           currentComponent = {
             name: componentNameMatch[1],
             id: componentNameMatch[2],
+            version: '',
             category: '',
             props: {},
             events: []
           };
         }
+        continue;
+      }
+      
+      // 提取版本信息
+      if (currentComponent && trimmedLine.startsWith('- **版本**: ')) {
+        currentComponent.version = trimmedLine.replace('- **版本**: ', '').trim();
         continue;
       }
       
@@ -277,17 +285,21 @@ export default async function handler(req, res) {
         const propList = c.props ? Object.entries(c.props).map(([propKey, propDef]) => 
           `${propKey} (${propDef.type}${propDef.required ? ', 必填' : ''}): ${propDef.label || ''}`
         ).join('; ') : '';
-        return `- ${c.id} (${c.name}): ${c.category} 类别组件${propList ? `\n  可配置属性: ${propList}` : ''}`;
+        return `- ${c.id} (${c.name} v${c.version}): ${c.category} 类别组件${propList ? `\n  可配置属性: ${propList}` : ''}`;
       }).join('\n');
       
       componentHint = `【重要】可用组件清单（必须严格使用以下组件ID）：
 ${componentDescriptions}
 
 组件使用规则：
-1. 在AMIS schema中，组件的"type"字段必须使用上述组件ID（如 "fh_input-text", "fh_select" 等）
-2. 组件的属性必须来自上述列出的可配置属性
-3. 不要使用未在清单中列出的组件或属性
-4. 所有生成的schema必须基于以上组件定义
+1. 组件的"componentName"字段必须使用上述组件ID（如 "fh_input-text", "fh_select" 等）
+2. 组件的"type"字段必须使用对应的分类（如 "form", "basic", "container" 等）
+3. 组件必须包含"version"字段，使用上述对应的版本号
+4. **所有组件自身属性必须放在"props"对象下**，不得直接作为组件根字段
+5. 组件样式通过"style"字段配置，默认值为{":root": {}}
+6. 支持嵌套的组件通过"children"字段包含子组件
+7. 不要使用未在清单中列出的组件或属性
+8. 所有生成的schema必须基于以上组件定义
 
 `;
     }
@@ -296,8 +308,56 @@ ${componentDescriptions}
     // 如果读取失败，继续执行但不包含组件信息
   }
 
-  // 构建完整的prompt，包含组件信息
-  const fullPrompt = `${systemPrompt}\n\n${componentHint}${baseSchemaText ? `当前已有的 AMIS schema（用于参考/更新）：\n${baseSchemaText}\n\n` : ''}用户对话需求如下：\n${userText}\n\n请输出"更新后的完整 AMIS schema JSON"。`;
+  // 读取组件规则文件（规范部分）
+  let componentRules = "";
+  try {
+    const componentRulesPath = path.join(process.cwd(), 'config', 'rules', 'component-rules.md');
+    const componentRulesData = fs.readFileSync(componentRulesPath, 'utf8');
+    
+    // 提取组件规则内容（移除温度设置行）
+    const rulesLines = componentRulesData.split('\n');
+    const rulesContent = [];
+    for (const line of rulesLines) {
+      if (!line.trim().startsWith('temperature:')) {
+        rulesContent.push(line);
+      }
+    }
+    
+    componentRules = `【组件配置规范】
+${rulesContent.join('\n')}
+
+`;
+  } catch (error) {
+    console.warn('无法读取组件规则文件:', error.message);
+    // 如果读取失败，继续执行但不包含组件规则
+  }
+
+  // 读取结构规则文件
+  let structureRules = "";
+  try {
+    const structureRulesPath = path.join(process.cwd(), 'config', 'rules', 'schema-structure.md');
+    const structureRulesData = fs.readFileSync(structureRulesPath, 'utf8');
+    
+    // 提取结构规则内容（移除温度设置行）
+    const rulesLines = structureRulesData.split('\n');
+    const rulesContent = [];
+    for (const line of rulesLines) {
+      if (!line.trim().startsWith('temperature:')) {
+        rulesContent.push(line);
+      }
+    }
+    
+    structureRules = `【Schema结构规则】
+${rulesContent.join('\n')}
+
+`;
+  } catch (error) {
+    console.warn('无法读取结构规则文件:', error.message);
+    // 如果读取失败，继续执行但不包含结构规则
+  }
+
+  // 构建完整的prompt，包含结构规则、组件规则和组件信息
+  const fullPrompt = `${systemPrompt}\n\n${structureRules}${componentRules}${componentHint}${baseSchemaText ? `当前已有的 Schema（用于参考/更新）：\n${baseSchemaText}\n\n` : ''}用户对话需求如下：\n${userText}\n\n请输出"更新后的完整 JSON Schema"。`;
 
   // 调试：输出拼装的完整prompt内容（仅在开发环境）
   if (process.env.NODE_ENV !== 'production') {
