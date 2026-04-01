@@ -1,12 +1,47 @@
 import fs from 'fs';
 import path from 'path';
 
+// 解析 Markdown 文件中的 systemPrompt（提取除温度设置外的所有内容）
+function extractSystemPromptFromMarkdown(markdownContent) {
+  // 移除温度设置行和空行
+  const lines = markdownContent.split('\n');
+  const promptLines = [];
+  
+  for (const line of lines) {
+    // 跳过温度设置行和空行（可选）
+    if (line.trim().startsWith('temperature:') || line.trim() === '') {
+      continue;
+    }
+    promptLines.push(line);
+  }
+  
+  // 将 Markdown 内容转换为纯文本提示
+  let promptText = promptLines.join('\n');
+  
+  // 移除 Markdown 标题符号，但保留标题文字
+  promptText = promptText.replace(/^#+\s+/gm, '');
+  
+  // 清理多余的空白行
+  promptText = promptText.replace(/\n{3,}/g, '\n\n').trim();
+  
+  return promptText;
+}
+
+// 从 Markdown 文件中提取 temperature 值
+function extractTemperatureFromMarkdown(markdownContent) {
+  const temperatureMatch = markdownContent.match(/temperature:\s*([0-9.]+)/i);
+  if (temperatureMatch) {
+    return parseFloat(temperatureMatch[1]);
+  }
+  return 0.2; // 默认值
+}
+
 async function callDashScopeAPI(prompt, apiKey, model = "qwen-plus", temperature = 0.2) {
   const baseURL = process.env.OPENAI_BASE_URL || "https://dashscope.aliyuncs.com/compatible-mode/v1";
   const response = await fetch(`${baseURL}/chat/completions`, {
     method: "POST",
     headers: {
-      "Content-Type": "application/json",
+      "Content-Type": "``",
       "Authorization": `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
@@ -78,7 +113,7 @@ export default async function handler(req, res) {
   }
 
   // 从请求体中获取必要的参数
-  const { prompt, messages, schema } = req.body;
+  const { prompt, messages, schema, mode = "default" } = req.body;
 
   // 参数验证
   if (!prompt && (!Array.isArray(messages) || messages.length === 0)) {
@@ -87,15 +122,16 @@ export default async function handler(req, res) {
     });
   }
 
-  // 读取系统 prompt 模式文件（按 mode）
-  let systemPromptConfig = null;
-  try {
-    const systemPromptPath = path.join(process.cwd(), 'config', 'system-prompts', 'default.json');
-    const systemPromptData = fs.readFileSync(systemPromptPath, 'utf8');
-    systemPromptConfig = JSON.parse(systemPromptData);
-  } catch (error) {
-    console.warn('无法读取系统 prompt 文件', error.message);
-  }
+  // 优先尝试读取 Markdown 格式的系统指令文件
+  const markdownPromptPath = path.join(process.cwd(), 'config', 'system-prompts', `${mode}.md`);
+  const markdownPromptData = fs.readFileSync(markdownPromptPath, 'utf8');
+  
+  // 解析 Markdown 文件中的 systemPrompt 和 temperature
+  const systemPromptConfig = {
+    systemPrompt:extractSystemPromptFromMarkdown(markdownPromptData),
+    temperature:extractTemperatureFromMarkdown(markdownPromptData)
+  };
+  
 
   // 获取选定的 prompt 模式（优先：system-prompts 文件 > 内置默认）
   const selectedPrompt = systemPromptConfig
@@ -121,28 +157,121 @@ export default async function handler(req, res) {
   // 读取组件配置信息
   let componentHint = "";
   try {
-    const componentConfigPath = path.join(process.cwd(), 'config', 'components', 'index.json');
+    // 直接读取 Markdown 格式的组件配置文件
+    const componentConfigPath = path.join(process.cwd(), 'config', 'components', 'index.md');
     const componentConfigData = fs.readFileSync(componentConfigPath, 'utf8');
-    const componentConfig = JSON.parse(componentConfigData);
     
-    // 正确提取组件信息：从 examples[0].components 中获取
-    let components = [];
-    if (componentConfig && Array.isArray(componentConfig.examples) && componentConfig.examples.length > 0) {
-      components = componentConfig.examples[0].components || [];
-    } else if (componentConfig && componentConfig.components && Array.isArray(componentConfig.components)) {
-      // 兼容直接在根目录的 components 数组的情况
-      components = componentConfig.components;
+    // 处理 Markdown 格式的组件配置
+    // 从 Markdown 中提取组件信息
+    const lines = componentConfigData.split('\n');
+    const components = [];
+    let currentComponent = null;
+    let inComponentsSection = false;
+    
+    for (const line of lines) {
+      const trimmedLine = line.trim();
+      
+      // 检测是否进入内置组件列表部分
+      if (trimmedLine === '## 内置组件列表') {
+        inComponentsSection = true;
+        continue;
+      }
+      
+      // 跳过非组件列表部分
+      if (!inComponentsSection) continue;
+      
+      // 检测组件标题行（以####开头）
+      if (trimmedLine.startsWith('#### ')) {
+        if (currentComponent) {
+          components.push(currentComponent);
+        }
+        const componentNameMatch = trimmedLine.match(/#### (.+) \((.+)\)/);
+        if (componentNameMatch) {
+          currentComponent = {
+            name: componentNameMatch[1],
+            id: componentNameMatch[2],
+            category: '',
+            props: {},
+            events: []
+          };
+        }
+        continue;
+      }
+      
+      // 提取分类信息
+      if (currentComponent && trimmedLine.startsWith('- **分类**: ')) {
+        currentComponent.category = trimmedLine.replace('- **分类**: ', '').trim();
+        continue;
+      }
+      
+      // 提取属性信息
+      if (currentComponent && trimmedLine.startsWith('- **属性**:') && line.includes(':')) {
+        // 属性信息在后续行中
+        continue;
+      }
+      
+      // 处理属性行（以- `开头）
+      if (currentComponent && trimmedLine.startsWith('- `') && trimmedLine.includes(':')) {
+        const propMatch = trimmedLine.match(/- `([^`]+)`: (.+) \(([^,)]+), 默认值: ([^)]+)\)/);
+        if (propMatch) {
+          const propName = propMatch[1];
+          const propLabel = propMatch[2];
+          const propType = propMatch[3].trim();
+          const propDefault = propMatch[4];
+          
+          // 转换类型字符串为标准类型
+          let standardType = 'string';
+          if (propType.includes('boolean')) standardType = 'boolean';
+          else if (propType.includes('array')) standardType = 'array';
+          else if (propType.includes('number')) standardType = 'number';
+          
+          currentComponent.props[propName] = {
+            type: standardType,
+            label: propLabel,
+            default: propDefault === 'false' ? false : 
+                    propDefault === 'true' ? true : 
+                    propDefault === '""' ? '' : propDefault
+          };
+        } else {
+          // 简单属性匹配
+          const simplePropMatch = trimmedLine.match(/- `([^`]+)`: (.+)/);
+          if (simplePropMatch) {
+            const propName = simplePropMatch[1];
+            const propDesc = simplePropMatch[2];
+            currentComponent.props[propName] = {
+              type: 'string',
+              label: propDesc,
+              default: ''
+            };
+          }
+        }
+        continue;
+      }
+      
+      // 处理事件行
+      if (currentComponent && trimmedLine.startsWith('- **事件**:') && !trimmedLine.includes('无')) {
+        // 事件信息在后续行中
+        continue;
+      }
+      
+      // 处理事件详情行（以- `开头）
+      if (currentComponent && trimmedLine.startsWith('- `') && trimmedLine.includes('`:') && !trimmedLine.includes('默认值')) {
+        const eventMatch = trimmedLine.match(/- `([^`]+)`: (.+)/);
+        if (eventMatch) {
+          currentComponent.events.push({
+            name: eventMatch[1],
+            description: eventMatch[2]
+          });
+        }
+      }
+    }
+    
+    // 添加最后一个组件
+    if (currentComponent) {
+      components.push(currentComponent);
     }
     
     if (components.length > 0) {
-      // 提取关键信息：id, name, category, props keys，并格式化为更清晰的描述
-      const componentInfo = components.map(c => ({
-        id: c.id,
-        name: c.name,
-        category: c.category,
-        props: c.props ? Object.keys(c.props) : []
-      }));
-      
       // 创建详细的组件使用说明
       const componentDescriptions = components.map(c => {
         const propList = c.props ? Object.entries(c.props).map(([propKey, propDef]) => 

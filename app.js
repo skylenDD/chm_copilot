@@ -95,7 +95,7 @@ export default function App() {
 
   return (
     <div style={{ maxWidth: 920, margin: "28px auto", fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, sans-serif" }}>
-      <h2 style={{ marginBottom: 16 }}>Copilot 对话式 Schema 生成器</h2>
+      <h2 style={{ marginBottom: 16 }}>Copilot 对话式 Schema 生成器（AMIS）</h2>
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, alignItems: "start" }}>
         <div style={{ border: "1px solid #eee", borderRadius: 10, padding: 14 }}>
@@ -176,7 +176,7 @@ export default function App() {
         </div>
 
         <div style={{ border: "1px solid #eee", borderRadius: 10, padding: 14 }}>
-          <div style={{ marginBottom: 10, fontWeight: 600 }}>页面渲染预览</div>
+          <div style={{ marginBottom: 10, fontWeight: 600 }}>AMIS 渲染预览</div>
           {schema ? (
             <div style={{ border: "1px solid #eee", borderRadius: 10, padding: 12, background: "#fff" }}>
               {renderAmis ? renderAmis({ schema }) : <div style={{ color: "#aaa" }}>渲染中...</div>}
