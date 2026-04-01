@@ -1,11 +1,11 @@
 # CHM Copilot - Low-Code Page Generator
 
-A low-code page generator built with Next.js, AMIS, and DashScope (Tongyi Qianwen). This project allows users to generate AMIS schemas through natural language conversations, enabling rapid prototyping of web pages.
+A low-code page generator built with Next.js and DashScope (Tongyi Qianwen). This project allows users to generate page schemas through natural language conversations, enabling rapid prototyping of web pages.
 
 ## Features
 
-- **Conversational Schema Generation**: Describe your page requirements in natural language, and the AI generates corresponding AMIS schemas.
-- **Real-time Rendering**: Instantly preview generated pages using AMIS rendering engine.
+- **Conversational Schema Generation**: Describe your page requirements in natural language, and the AI generates corresponding page schemas.
+- **Real-time Rendering**: Instantly preview generated pages using integrated rendering engine.
 - **DashScope Integration**: Powered by Alibaba's Tongyi Qianwen model for intelligent schema generation.
 - **Next.js Framework**: Modern React-based web application with server-side rendering.
 
@@ -42,13 +42,13 @@ A low-code page generator built with Next.js, AMIS, and DashScope (Tongyi Qianwe
 
 3. Enter your page requirements in the chat interface (e.g., "Create a login form with username and password fields").
 
-4. The AI will generate an AMIS schema and render the page in real-time.
+4. The AI will generate a schema and render the page in real-time.
 
 ## API
 
 ### POST /api/genSchema
 
-Generates AMIS schema based on user messages.
+Generates page schema based on user messages.
 
 **Request Body:**
 ```json
@@ -56,9 +56,17 @@ Generates AMIS schema based on user messages.
   "messages": [
     {"role": "user", "content": "Create a contact form"}
   ],
-  "schema": {} // Optional: base schema to update
+  "schema": {}, // Optional: base schema to update
+  "mode": "default" // Optional: prompt mode (default, strict, creative, minimal, advanced)
 }
 ```
+
+**Available Modes:**
+- `default`: Standard low-code page generation
+- `strict`: Strict JSON validation only
+- `creative`: Allows innovative designs
+- `minimal`: Generates minimal schemas
+- `advanced`: Includes complex components
 
 **Response:**
 ```json
@@ -85,7 +93,6 @@ Generates AMIS schema based on user messages.
 ## Technologies Used
 
 - **Next.js**: React framework for server-side rendering
-- **AMIS**: Low-code UI framework by Alibaba
 - **DashScope**: Alibaba's AI model platform
 - **Tongyi Qianwen**: Large language model for schema generation
 
@@ -105,12 +112,12 @@ MIT License - see LICENSE file for details.
 
 # CHM Copilot - 低代码页面生成器
 
-基于 Next.js、AMIS 和 DashScope（通义千问）构建的低代码页面生成器。本项目允许用户通过自然语言对话生成 AMIS schema，实现网页的快速原型设计。
+基于 Next.js 和 DashScope（通义千问）构建的低代码页面生成器。本项目允许用户通过自然语言对话生成页面 schema，实现网页的快速原型设计。
 
 ## 功能特性
 
-- **对话式 Schema 生成**：用自然语言描述页面需求，AI 生成对应的 AMIS schema。
-- **实时渲染**：使用 AMIS 渲染引擎即时预览生成的页面。
+- **对话式 Schema 生成**：用自然语言描述页面需求，AI 生成对应的页面 schema。
+- **实时渲染**：使用集成的渲染引擎即时预览生成的页面。
 - **DashScope 集成**：由阿里巴巴的通义千问模型提供智能 schema 生成能力。
 - **Next.js 框架**：基于 React 的现代化 Web 应用，支持服务端渲染。
 
@@ -147,13 +154,13 @@ MIT License - see LICENSE file for details.
 
 3. 在聊天界面输入页面需求（例如："创建一个包含用户名和密码字段的登录表单"）。
 
-4. AI 将生成 AMIS schema 并实时渲染页面。
+4. AI 将生成 schema 并实时渲染页面。
 
 ## API 接口
 
 ### POST /api/genSchema
 
-基于用户消息生成 AMIS schema。
+基于用户消息生成页面 schema。
 
 **请求体：**
 ```json
@@ -161,9 +168,17 @@ MIT License - see LICENSE file for details.
   "messages": [
     {"role": "user", "content": "创建一个联系表单"}
   ],
-  "schema": {} // 可选：要更新的基础 schema
+  "schema": {}, // 可选：要更新的基础 schema
+  "mode": "default" // 可选：prompt 模式 (default, strict, creative, minimal, advanced)
 }
 ```
+
+**可用模式：**
+- `default`：标准低代码页面生成
+- `strict`：严格 JSON 验证
+- `creative`：允许创新设计
+- `minimal`：生成极简 schema
+- `advanced`：包含复杂组件
 
 **响应：**
 ```json
@@ -190,7 +205,6 @@ MIT License - see LICENSE file for details.
 ## 使用的技术
 
 - **Next.js**：React 框架，支持服务端渲染
-- **AMIS**：阿里巴巴的低代码 UI 框架
 - **DashScope**：阿里巴巴的 AI 模型平台
 - **通义千问**：用于 schema 生成的大语言模型
 

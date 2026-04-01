@@ -1,4 +1,7 @@
-async function callDashScopeAPI(prompt, apiKey, model = "qwen-plus") {
+import fs from 'fs';
+import path from 'path';
+
+async function callDashScopeAPI(prompt, apiKey, model = "qwen-plus", temperature = 0.2) {
   const baseURL = process.env.OPENAI_BASE_URL || "https://dashscope.aliyuncs.com/compatible-mode/v1";
   const response = await fetch(`${baseURL}/chat/completions`, {
     method: "POST",
@@ -14,7 +17,7 @@ async function callDashScopeAPI(prompt, apiKey, model = "qwen-plus") {
           content: prompt
         }
       ],
-      temperature: 0.2
+      temperature: temperature
     })
   });
 
@@ -74,34 +77,108 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: "缺少环境变量 `DASHSCOPE_API_KEY`" });
   }
 
-  const body = req.body || {};
+  // 从请求体中获取必要的参数
+  const { prompt, messages, schema } = req.body;
 
-  // 向后兼容：旧版请求只传 prompt
-  const { prompt, messages, schema } = body;
-  const userMessages = Array.isArray(messages)
-    ? messages
-    : prompt
-      ? [{ role: "user", content: prompt }]
-      : [];
+  // 参数验证
+  if (!prompt && (!Array.isArray(messages) || messages.length === 0)) {
+    return res.status(400).json({ 
+      error: "必须提供 prompt 字符串或非空的 messages 数组" 
+    });
+  }
 
-  const systemPrompt = `
-你是一个低代码页面 Schema 生成助手。要求：根据用户对话需求输出严格的 AMIS schema JSON。
+  // 读取系统 prompt 模式文件（按 mode）
+  let systemPromptConfig = null;
+  try {
+    const systemPromptPath = path.join(process.cwd(), 'config', 'system-prompts', 'default.json');
+    const systemPromptData = fs.readFileSync(systemPromptPath, 'utf8');
+    systemPromptConfig = JSON.parse(systemPromptData);
+  } catch (error) {
+    console.warn('无法读取系统 prompt 文件', error.message);
+  }
 
-规则：
-1) 只返回 JSON，不要返回任何额外文字、Markdown 或解释。
-2) 如果入参包含 base schema（schema 字段），请在其基础上进行"更新/增补"，最终仍输出完整的 AMIS schema 对象。
-3) JSON 必须可以被 JSON.parse 解析。
-4) 你输出的对象必须是 AMIS schema（例如 type: "page" 等）。
-`.trim();
+  // 获取选定的 prompt 模式（优先：system-prompts 文件 > 内置默认）
+  const selectedPrompt = systemPromptConfig
+    || {
+      systemPrompt: `你是一个低代码页面 Schema 生成助手。要求：根据用户对话需求输出严格的 AMIS schema JSON。\n\n规则：\n1) 只返回 JSON，不要返回任何额外文字、Markdown 或解释。\n2) 如果入参包含 base schema（schema 字段），请在其基础上进行"更新/增补"，最终仍输出完整的 AMIS schema 对象。\n3) JSON 必须可以被 JSON.parse 解析。\n4) 你输出的对象必须是 AMIS schema（例如 type: "page" 等）。`,
+      temperature: 0.2
+    };
 
-  const userText = userMessages.map(m => String(m?.content ?? "")).filter(Boolean).join("\n\n");
+  const systemPrompt = selectedPrompt.systemPrompt;
+  const model = "qwen-plus"; // 固定使用 qwen-plus 模型
+  const temperature = selectedPrompt.temperature !== undefined ? selectedPrompt.temperature : 0.2;
+
+  // 构建用户输入文本
+  let userText = "";
+  if (prompt) {
+    userText = prompt;
+  } else if (Array.isArray(messages)) {
+    userText = messages.map(m => String(m?.content ?? "")).filter(Boolean).join("\n\n");
+  }
+
   const baseSchemaText = schema ? JSON.stringify(schema) : null;
 
-  const fullPrompt = `${systemPrompt}\n\n${baseSchemaText ? `当前已有的 AMIS schema（用于参考/更新）：\n${baseSchemaText}\n\n` : ''}用户对话需求如下（按时间顺序）：\n${userText}\n\n请输出"更新后的完整 AMIS schema JSON"。`;
+  // 读取组件配置信息
+  let componentHint = "";
+  try {
+    const componentConfigPath = path.join(process.cwd(), 'config', 'components', 'index.json');
+    const componentConfigData = fs.readFileSync(componentConfigPath, 'utf8');
+    const componentConfig = JSON.parse(componentConfigData);
+    
+    // 正确提取组件信息：从 examples[0].components 中获取
+    let components = [];
+    if (componentConfig && Array.isArray(componentConfig.examples) && componentConfig.examples.length > 0) {
+      components = componentConfig.examples[0].components || [];
+    } else if (componentConfig && componentConfig.components && Array.isArray(componentConfig.components)) {
+      // 兼容直接在根目录的 components 数组的情况
+      components = componentConfig.components;
+    }
+    
+    if (components.length > 0) {
+      // 提取关键信息：id, name, category, props keys，并格式化为更清晰的描述
+      const componentInfo = components.map(c => ({
+        id: c.id,
+        name: c.name,
+        category: c.category,
+        props: c.props ? Object.keys(c.props) : []
+      }));
+      
+      // 创建详细的组件使用说明
+      const componentDescriptions = components.map(c => {
+        const propList = c.props ? Object.entries(c.props).map(([propKey, propDef]) => 
+          `${propKey} (${propDef.type}${propDef.required ? ', 必填' : ''}): ${propDef.label || ''}`
+        ).join('; ') : '';
+        return `- ${c.id} (${c.name}): ${c.category} 类别组件${propList ? `\n  可配置属性: ${propList}` : ''}`;
+      }).join('\n');
+      
+      componentHint = `【重要】可用组件清单（必须严格使用以下组件ID）：
+${componentDescriptions}
+
+组件使用规则：
+1. 在AMIS schema中，组件的"type"字段必须使用上述组件ID（如 "fh_input-text", "fh_select" 等）
+2. 组件的属性必须来自上述列出的可配置属性
+3. 不要使用未在清单中列出的组件或属性
+4. 所有生成的schema必须基于以上组件定义
+
+`;
+    }
+  } catch (error) {
+    console.warn('无法读取组件配置文件:', error.message);
+    // 如果读取失败，继续执行但不包含组件信息
+  }
+
+  // 构建完整的prompt，包含组件信息
+  const fullPrompt = `${systemPrompt}\n\n${componentHint}${baseSchemaText ? `当前已有的 AMIS schema（用于参考/更新）：\n${baseSchemaText}\n\n` : ''}用户对话需求如下：\n${userText}\n\n请输出"更新后的完整 AMIS schema JSON"。`;
+
+  // 调试：输出拼装的完整prompt内容（仅在开发环境）
+  if (process.env.NODE_ENV !== 'production') {
+    console.log('=== 拼装的完整 System Prompt ===');
+    console.log(fullPrompt);
+    console.log('=== End of System Prompt ===');
+  }
 
   try {
-    const model = process.env.MODEL_NAME || "qwen-plus";
-    const result = await callDashScopeAPI(fullPrompt, apiKey, model);
+    const result = await callDashScopeAPI(fullPrompt, apiKey, model, temperature);
 
     // OpenAI 兼容接口标准响应格式：{ choices: [{ message: { content: string, role?: string } }], usage?: {...} }
     // 增强防御性检查，确保数据结构完整
