@@ -7,7 +7,7 @@
   - `schemaType` - Schema类型标识，固定值为 "superform"
   - `superVersion` - SuperForm版本号，字符串类型（如 "1.0.0"）
   - `pages` - 页面数组，包含一个或多个页面对象
-  - `actions` - 全局动作配置对象，默认值为 `{}`
+  - `actions` - 全局动作配置对象，用于定义页面逻辑和事件处理函数
 - **禁止字段**：
   - 不得包含其他根级别字段
 
@@ -26,6 +26,9 @@
       - "palantirV4" (帕兰提尔版)
       - "compact" (紧凑型)
   - `layout` - **页面根组件对象**，直接作为页面结构Schema的起始点，必须是一个完整的组件对象，componentName必须为"root"
+- **可选字段**：
+  - `dataSource` - 数据源配置对象，用于定义页面变量或接口请求
+    - `online` - 页面变量或接口请求定义数组
 
 ### 组件节点
 - **必须字段**：
@@ -37,7 +40,7 @@
   - `id` - 组件唯一标识（字符串或数字类型）
   - `name` - 组件名称（字符串类型）
   - `category` - 组件分类标识（字符串类型）
-  - `events` - 组件事件列表（数组类型）
+  - `events` - 组件事件配置对象，以事件名作为key，value为事件处理函数数组
 - **可选字段**：
   - `children` - 子组件数组，仅当组件支持嵌套时使用
 
@@ -63,8 +66,12 @@
 
 ### actions 字段
 - 必须为对象类型
-- 默认值为 `{}`
-- 用于定义全局动作配置
+- 结构格式：`{ "module": { "source": "页面JS代码字符串" } }`
+- `module` 对象必须包含 `source` 字段
+- `source` 字段为字符串类型，包含完整的页面 JavaScript 代码
+- 页面 JS 代码中会自动生成与 `events` 事件对象 `id` 对应的完整函数（export 形式）
+- 当 `events` 中的 `callback` 为空字符串时，系统会默认在页面 JS 中生成对应函数，函数签名包含 `ctx` 参数，内容为打印传参
+- 当 `events` 中的 `callback` 指定了内置方法时，页面 JS 中不会重复生成该函数
 
 ### id 字段（页面级别）
 - 必须为字符串或数字类型
@@ -96,6 +103,22 @@
   - "palantirV4" - 帕兰提尔版
   - "compact" - 紧凑型
 - 禁止使用其他自定义主题值
+
+### dataSource 字段（页面级别）
+- **可选字段**：可以不提供
+- 必须为对象类型
+- 必须包含 `online` 字段
+- `online` 字段必须为数组类型
+- `online` 数组中的每个元素表示一个数据源定义，支持两种类型：
+  - **普通变量 (VALUE)**：
+    - `name`: 变量名称（字符串类型）
+    - `protocol`: 协议类型，固定值为 "VALUE"
+    - `initialData`: 变量初始值（任意类型）
+  - **接口请求 (REMOTE)**：
+    - `name`: 数据名称（字符串类型）
+    - `protocol`: 协议类型，固定值为 "REMOTE"  
+    - `url`: 请求地址（字符串类型）
+    - `method`: 请求方法（字符串类型，如 "GET", "POST" 等）
 
 ### layout 字段（页面级别）
 - **必须为组件对象类型**
@@ -151,8 +174,14 @@
 - 表示组件的分类标识
 
 ### events 字段（组件级别）
-- 必须为数组类型
-- 包含组件支持的事件列表
+- 必须为对象类型
+- 以事件名作为key，value为数组类型
+- 数组中的每个元素必须包含以下字段：
+  - `id`: 具体执行的函数名称（字符串类型）
+  - `name`: 方法中文名称（字符串类型）
+  - `params`: 参数配置对象，必须包含以下字段：
+    - `callback`: 内置方法的字符串形式（字符串类型），可以是完整的函数定义或为空字符串。当提供完整函数定义时，函数名称必须与该事件对象的 `id` 字段相同（如 `id` 为 "setValue"，则函数定义应为 `"function setValue(ctx) { console.log('setValue', ctx); }"`）。当没有给定执行内容时，`callback` 应为空字符串。
+- **联动机制**：当 `callback` 为空字符串时，系统会在 `actions.module.source` 的页面 JS 中自动生成对应的完整函数（export 形式），函数签名包含 `ctx` 参数，内容为打印传参，函数名称与 `id` 相同。当 `callback` 指定了内置方法时，页面 JS 中不会重复生成该函数，而是直接使用指定的实现。
 
 ## 禁止使用的字段
 
@@ -160,7 +189,7 @@
 - 直接在组件根级别放置组件自身属性（所有属性必须放在props下）
 - 使用除 `children` 以外的其他嵌套字段名
 - 在根节点使用除 `schemaType`, `superVersion`, `pages`, `actions` 以外的字段
-- 在页面节点使用除 `id`, `type`, `title`, `params`, `layout` 以外的字段
+- 在页面节点使用除 `id`, `type`, `title`, `params`, `layout`, `dataSource` 以外的字段
 - **页面节点不得包含 `children` 字段**（组件结构必须放在 `layout.children` 下）
 - **layout对象不得包含 `root` 属性**（layout本身就是root组件）
 - 任何未在组件清单中明确定义的自定义字段
@@ -187,6 +216,21 @@
         "groupId": -1,
         "theme": "default"
       },
+      "dataSource": {
+        "online": [
+          {
+            "name": "userData",
+            "protocol": "VALUE",
+            "initialData": {}
+          },
+          {
+            "name": "userList",
+            "protocol": "REMOTE",
+            "url": "/api/users",
+            "method": "GET"
+          }
+        ]
+      },
       "layout": {
         "componentName": "root",
         "type": "container",
@@ -196,7 +240,7 @@
         "id": "page-root",
         "name": "页面根容器",
         "category": "container",
-        "events": [],
+        "events": {},
         "children": [
           {
             "componentName": "fh_form",
@@ -209,7 +253,7 @@
             "id": "main-form",
             "name": "主表单",
             "category": "container",
-            "events": [],
+            "events": {},
             "children": [
               {
                 "componentName": "fh_input-text",
@@ -224,7 +268,33 @@
                 "id": "username-input",
                 "name": "用户名输入框",
                 "category": "form",
-                "events": ["onChange", "onFocus"]
+                "events": {
+                  "onChange": [
+                    {
+                      "id": "setValue",
+                      "name": "设置值",
+                      "params": {
+                        "callback": "function setValue(ctx) { console.log('setValue', ctx); }"
+                      }
+                    },
+                    {
+                      "id": "showTip",
+                      "name": "显示提示",
+                      "params": {
+                        "callback": ""
+                      }
+                    }
+                  ],
+                  "onFocus": [
+                    {
+                      "id": "focusHandler",
+                      "name": "获取焦点处理",
+                      "params": {
+                        "callback": "function focusHandler(ctx) { console.log('focusHandler', ctx); }"
+                      }
+                    }
+                  ]
+                }
               },
               {
                 "componentName": "fh_button",
@@ -238,7 +308,17 @@
                 "id": "submit-button",
                 "name": "提交按钮",
                 "category": "basic",
-                "events": ["onClick"]
+                "events": {
+                  "onClick": [
+                    {
+                      "id": "submitForm",
+                      "name": "提交表单",
+                      "params": {
+                        "callback": ""
+                      }
+                    }
+                  ]
+                }
               }
             ]
           }
@@ -246,7 +326,11 @@
       }
     }
   ],
-  "actions": {}
+  "actions": {
+    "module": {
+      "source": "export function showTip(ctx) {\\n  console.log('showTip', ctx);\\n}\\n\\nexport function submitForm(ctx) {\\n  console.log('submitForm', ctx);\\n}"
+    }
+  }
 }
 ```
 
