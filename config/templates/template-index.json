@@ -22,7 +22,7 @@
       "id": "detail",
       "name": "基础详情页面",
       "description": "产品、用户信息、联系人详情等展示页面",
-      "category": "form",
+      "category": "detail",
       "tags": ["detail", "user", "product"],
       "priority": 3,
       "components": ["fh_text", "fh_button"]
