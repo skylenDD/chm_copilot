@@ -1,0 +1,11 @@
+#### 文本输入框 (fh_input-text)
+- **版本**: 1.0.0
+- **分类**: form
+- **图标**: icon-text
+- **属性**:
+  - `label`: 标签 (string, 默认值: "请输入")
+  - `placeholder`: 占位符 (string, 默认值: "请输入内容")  
+  - `required`: 是否必填 (boolean, 默认值: false)
+- **事件**:
+  - `onChange(ctx, a)`: 内容变化事件，ctx 包含组件上下文信息，默认实现：`console.log('onChange', ctx,a)`
+  - `onFocus(ctx, b)`: 获取焦点事件，ctx 包含组件上下文信息，默认实现：`console.log('onFocus', ctx,b)`

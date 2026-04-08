@@ -1,0 +1,40 @@
+{
+  "templates": [
+    {
+      "id": "basic-form",
+      "name": "基础表单页面",
+      "description": "包含文本输入、选择器等基础组件的简单表单页面",
+      "category": "form",
+      "tags": ["form", "input", "basic"],
+      "priority": 1,
+      "components": ["fh_input-text", "fh_select", "fh_date-picker", "fh_radio", "fh_checkbox", "fh_button"]
+    },
+    {
+      "id": "data-list",
+      "name": "数据列表页面",
+      "description": "带搜索和分页功能的数据展示列表页面",
+      "category": "list",
+      "tags": ["table", "list", "search"],
+      "priority": 2,
+      "components": ["fh_table", "fh_button"]
+    },
+    {
+      "id": "detail",
+      "name": "基础详情页面",
+      "description": "产品、用户信息、联系人详情等展示页面",
+      "category": "form",
+      "tags": ["detail", "user", "product"],
+      "priority": 3,
+      "components": ["fh_text", "fh_button"]
+    },
+    {
+      "id": "dashboard",
+      "name": "仪表盘页面",
+      "description": "包含数据统计和图表的概览页面",
+      "category": "dashboard",
+      "tags": ["dashboard", "overview", "cards"],
+      "priority": 4,
+      "components": ["fh_table", "fh_text", "fh_button"]
+    }
+  ]
+}

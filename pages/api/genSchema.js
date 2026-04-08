@@ -15,7 +15,7 @@ function extractSystemPromptFromMarkdown(markdownContent) {
     promptLines.push(line);
   }
   
-  // 将 Markdown 内容转换为纯文本提示
+  // 将Markdown 内容转换为纯文本提示
   let promptText = promptLines.join('\n');
   
   // 移除 Markdown 标题符号，但保留标题文字
@@ -27,7 +27,7 @@ function extractSystemPromptFromMarkdown(markdownContent) {
   return promptText;
 }
 
-// 从 Markdown 文件中提取 temperature 值
+// 从Markdown 文件中提取temperature 值
 function extractTemperatureFromMarkdown(markdownContent) {
   const temperatureMatch = markdownContent.match(/temperature:\s*([0-9.]+)/i);
   if (temperatureMatch) {
@@ -41,7 +41,7 @@ async function callDashScopeAPI(prompt, apiKey, model = "qwen-plus", temperature
   const response = await fetch(`${baseURL}/chat/completions`, {
     method: "POST",
     headers: {
-      "Content-Type": "``",
+      "Content-Type": "application/json",
       "Authorization": `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
@@ -105,7 +105,7 @@ export default async function handler(req, res) {
   }
 
   const apiKey = process.env.DASHSCOPE_API_KEY;
-  // 调试：记录 API 密钥是否存在（不记录实际值以保护安全）
+  // 调试：记录API 密钥是否存在（不记录实际值以保护安全）
   console.log('DASHSCOPE_API_KEY loaded:', !!apiKey);
   
   if (!apiKey) {
@@ -136,7 +136,7 @@ export default async function handler(req, res) {
   // 获取选定的 prompt 模式（优先：system-prompts 文件 > 内置默认）
   const selectedPrompt = systemPromptConfig
     || {
-      systemPrompt: `你是一个低代码页面 Schema 生成助手。要求：根据用户对话需求输出严格的 AMIS schema JSON。\n\n规则：\n1) 只返回 JSON，不要返回任何额外文字、Markdown 或解释。\n2) 如果入参包含 base schema（schema 字段），请在其基础上进行"更新/增补"，最终仍输出完整的 AMIS schema 对象。\n3) JSON 必须可以被 JSON.parse 解析。\n4) 你输出的对象必须是 AMIS schema（例如 type: "page" 等）。`,
+      systemPrompt: `你是一个低代码页面 Schema 生成助手。要求：根据用户对话需求输出严格的 AMIS schema JSON。\n\n规则：\n1) 只返回JSON，不要返回任何额外文字、Markdown 或解释。\n2) 如果入参包含 base schema（schema 字段），请在其基础上进行"更新/增补"，最终仍输出完整的 AMIS schema 对象。\n3) JSON 必须可以被 JSON.parse 解析。\n4) 你输出的对象必须是 AMIS schema（例如 type: "page" 等）。`,
       temperature: 0.2
     };
 
@@ -157,29 +157,127 @@ export default async function handler(req, res) {
   // 读取组件配置信息
   let componentHint = "";
   try {
-    // 读取组件配置文件（从components文件夹）
-    const componentConfigPath = path.join(process.cwd(), 'config', 'components', 'component-config.md');
-    const componentConfigData = fs.readFileSync(componentConfigPath, 'utf8');
+    // 读取组件配置文件目录
+    const componentDir = path.join(process.cwd(), 'config', 'components');
+    const componentFiles = fs.readdirSync(componentDir).filter(file => file.endsWith('.md'));
     
-    // 处理 Markdown 格式的组件配置
-    // 从 Markdown 中提取组件信息
-    const lines = componentConfigData.split('\n');
     const components = [];
-    let currentComponent = null;
-    let inComponentsSection = true; // 组件配置文件直接从组件开始
     
-    for (const line of lines) {
-      const trimmedLine = line.trim();
+    for (const file of componentFiles) {
+      const filePath = path.join(componentDir, file);
+      const componentData = fs.readFileSync(filePath, 'utf8');
       
-      // 跳过标题行
-      if (trimmedLine === '# 低代码平台内置组件配置') {
-        continue;
+      // 解析单个组件的 Markdown
+      const lines = componentData.split('\n');
+      let currentComponent = null;
+      
+      for (const line of lines) {
+        const trimmedLine = line.trim();
+        
+        // 检测组件标题行（以####开头）
+        if (trimmedLine.startsWith('#### ')) {
+          if (currentComponent) {
+            components.push(currentComponent);
+          }
+          const componentNameMatch = trimmedLine.match(/#### (.+) \((.+)\)/);
+          if (componentNameMatch) {
+            currentComponent = {
+              name: componentNameMatch[1],
+              id: componentNameMatch[2],
+              version: '',
+              category: '',
+              props: {},
+              events: []
+            };
+          }
+          continue;
+        }
+        
+        if (!currentComponent) continue;
+        
+        // 提取版本信息
+        if (trimmedLine.startsWith('- **版本**: ')) {
+          currentComponent.version = trimmedLine.replace('- **版本**: ', '').trim();
+          continue;
+        }
+        
+        // 提取分类信息
+        if (trimmedLine.startsWith('- **分类**: ')) {
+          currentComponent.category = trimmedLine.replace('- **分类**: ', '').trim();
+          continue;
+        }
+        
+        // 提取属性信息
+        if (trimmedLine.startsWith('- **属性**:') && line.includes(':')) {
+          // 属性信息在后续行中
+          continue;
+        }
+        
+        // 处理属性行（以- `开头）
+        if (trimmedLine.startsWith('- `') && trimmedLine.includes(':')) {
+          const propMatch = trimmedLine.match(/- `([^`]+)`: (.+) \(([^,)]+), 默认值 ([^)]+)\)/);
+          if (propMatch) {
+            const propName = propMatch[1];
+            const propLabel = propMatch[2];
+            const propType = propMatch[3].trim();
+            const propDefault = propMatch[4];
+            
+            // 转换类型字符串为标准类型
+            let standardType = 'string';
+            if (propType.includes('boolean')) standardType = 'boolean';
+            else if (propType.includes('array')) standardType = 'array';
+            else if (propType.includes('number')) standardType = 'number';
+            
+            currentComponent.props[propName] = {
+              type: standardType,
+              label: propLabel,
+              default: propDefault === 'false' ? false : 
+                      propDefault === 'true' ? true : 
+                      propDefault === '""' ? '' : propDefault
+            };
+          } else {
+            // 简单属性匹配
+            const simplePropMatch = trimmedLine.match(/- `([^`]+)`: (.+)/);
+            if (simplePropMatch) {
+              const propName = simplePropMatch[1];
+              const propDesc = simplePropMatch[2];
+              currentComponent.props[propName] = {
+                type: 'string',
+                label: propDesc,
+                default: ''
+              };
+            }
+          }
+          continue;
+        }
+        
+        // 处理事件
+        if (trimmedLine.startsWith('- **事件**:') && !trimmedLine.includes('无')) {
+          // 事件信息在后续行中
+          continue;
+        }
+        
+        // 处理事件详情行（以 `开头）
+        if (trimmedLine.startsWith('- `') && trimmedLine.includes('`:') && !trimmedLine.includes('默认值')) {
+          const eventMatch = trimmedLine.match(/- `([^`]+)`: (.+)/);
+          if (eventMatch) {
+            currentComponent.events.push({
+              name: eventMatch[1],
+              description: eventMatch[2]
+            });
+          }
+        }
       }
       
-      // 跳过分类标题行
-      if (trimmedLine.startsWith('## ') && trimmedLine.endsWith('类组件')) {
-        continue;
+      // 添加最后一个组件
+      if (currentComponent) {
+        components.push(currentComponent);
       }
+
+      
+
+      
+
       
       // 检测组件标题行（以####开头）
       if (trimmedLine.startsWith('#### ')) {
@@ -220,7 +318,7 @@ export default async function handler(req, res) {
       
       // 处理属性行（以- `开头）
       if (currentComponent && trimmedLine.startsWith('- `') && trimmedLine.includes(':')) {
-        const propMatch = trimmedLine.match(/- `([^`]+)`: (.+) \(([^,)]+), 默认值: ([^)]+)\)/);
+        const propMatch = trimmedLine.match(/- `([^`]+)`: (.+) \(([^,)]+), 默认值 ([^)]+)\)/);
         if (propMatch) {
           const propName = propMatch[1];
           const propLabel = propMatch[2];
@@ -256,13 +354,13 @@ export default async function handler(req, res) {
         continue;
       }
       
-      // 处理事件行
+      // 处理事件
       if (currentComponent && trimmedLine.startsWith('- **事件**:') && !trimmedLine.includes('无')) {
         // 事件信息在后续行中
         continue;
       }
       
-      // 处理事件详情行（以- `开头）
+      // 处理事件详情行（以 `开头）
       if (currentComponent && trimmedLine.startsWith('- `') && trimmedLine.includes('`:') && !trimmedLine.includes('默认值')) {
         const eventMatch = trimmedLine.match(/- `([^`]+)`: (.+)/);
         if (eventMatch) {
@@ -280,27 +378,35 @@ export default async function handler(req, res) {
     }
     
     if (components.length > 0) {
+      let filteredComponents = components;
+      
+      // 如果匹配到模板，根据模板需要的组件过滤
+      if (matchedTemplateInfo) {
+        try {
+          const templateIndexPath = path.join(process.cwd(), 'config', 'templates', 'template-index.json');
+          const templateIndexData = fs.readFileSync(templateIndexPath, 'utf8');
+          const templateIndex = JSON.parse(templateIndexData).templates;
+          
+          const template = templateIndex.find(t => t.id === matchedTemplateInfo.templateId);
+          if (template && template.components) {
+            filteredComponents = components.filter(c => template.components.includes(c.id));
+          }
+        } catch (error) {
+          console.warn('无法读取模板索引或过滤组件:', error.message);
+          // 如果失败，使用所有组件
+        }
+      }
+      
       // 创建详细的组件使用说明
-      const componentDescriptions = components.map(c => {
+      const componentDescriptions = filteredComponents.map(c => {
         const propList = c.props ? Object.entries(c.props).map(([propKey, propDef]) => 
           `${propKey} (${propDef.type}${propDef.required ? ', 必填' : ''}): ${propDef.label || ''}`
         ).join('; ') : '';
-        return `- ${c.id} (${c.name} v${c.version}): ${c.category} 类别组件${propList ? `\n  可配置属性: ${propList}` : ''}`;
+        return `- ${c.id} (${c.name} v${c.version}): ${c.category} 类别组件${propList ? `\n  可配置属性 ${propList}` : ''}`;
       }).join('\n');
       
       componentHint = `【重要】可用组件清单（必须严格使用以下组件ID）：
-${componentDescriptions}
-
-组件使用规则：
-1. 组件的"componentName"字段必须使用上述组件ID（如 "fh_input-text", "fh_select" 等）
-2. 组件的"type"字段必须使用对应的分类（如 "form", "basic", "container" 等）
-3. 组件必须包含"version"字段，使用上述对应的版本号
-4. **所有组件自身属性必须放在"props"对象下**，不得直接作为组件根字段
-5. 组件样式通过"style"字段配置，默认值为{":root": {}}
-6. 支持嵌套的组件通过"children"字段包含子组件
-7. 不要使用未在清单中列出的组件或属性
-8. 所有生成的schema必须基于以上组件定义
-
+        ${componentDescriptions}
 `;
     }
   } catch (error) {
@@ -334,6 +440,7 @@ ${rulesContent.join('\n')}
 
   // 读取结构规则文件
   let structureRules = "";
+  let structureRulesWithoutExample = ""; // 新增：不含示例的结构规则
   try {
     const structureRulesPath = path.join(process.cwd(), 'config', 'rules', 'schema-structure.md');
     const structureRulesData = fs.readFileSync(structureRulesPath, 'utf8');
@@ -341,9 +448,25 @@ ${rulesContent.join('\n')}
     // 提取结构规则内容（移除温度设置行）
     const rulesLines = structureRulesData.split('\n');
     const rulesContent = [];
+    const rulesContentWithoutExample = [];
+    let inExampleBlock = false;
+    
     for (const line of rulesLines) {
       if (!line.trim().startsWith('temperature:')) {
         rulesContent.push(line);
+      }
+      
+      // 处理不含示例的版本
+      if (line.trim().startsWith('``json')) {
+        inExampleBlock = true;
+        continue;
+      }
+      if (inExampleBlock && line.trim().startsWith('```')) {
+        inExampleBlock = false;
+        continue;
+      }
+      if (!inExampleBlock && !line.trim().startsWith('temperature:')) {
+        rulesContentWithoutExample.push(line);
       }
     }
     
@@ -351,13 +474,53 @@ ${rulesContent.join('\n')}
 ${rulesContent.join('\n')}
 
 `;
+    structureRulesWithoutExample = `【Schema结构规则】
+${rulesContentWithoutExample.join('\n')}
+
+`;
   } catch (error) {
     console.warn('无法读取结构规则文件:', error.message);
     // 如果读取失败，继续执行但不包含结构规则
   }
 
-  // 构建完整的prompt，包含结构规则、组件规则和组件信息
-  const fullPrompt = `${systemPrompt}\n\n${structureRules}${componentRules}${componentHint}${baseSchemaText ? `当前已有的 Schema（用于参考/更新）：\n${baseSchemaText}\n\n` : ''}用户对话需求如下：\n${userText}\n\n请输出"更新后的完整 JSON Schema"。`;
+  // 读取页面模板
+  let pageTemplates = "";
+  let pageTemplateContents = {}; // 存储模板内容
+  let templateIndex = []; // 存储模板索引信息
+  try {
+    const templateIndexPath = path.join(process.cwd(), 'config', 'templates', 'template-index.json');
+    if (fs.existsSync(templateIndexPath)) {
+      templateIndex = JSON.parse(fs.readFileSync(templateIndexPath, 'utf8')).templates;
+      
+      // 读取各个模板文件的描述信息和内容
+      const templateDescriptions = [];
+      for (const template of templateIndex) {
+        const templatePath = path.join(process.cwd(), 'config', 'templates', `${template.id}.md`);
+        if (fs.existsSync(templatePath)) {
+          const templateContent = fs.readFileSync(templatePath, 'utf8');
+          templateDescriptions.push(`- ${template.id}: ${template.name} (${template.description})`);
+          pageTemplateContents[template.id] = templateContent; // 保存模板内容
+        }
+      }
+      
+      if (templateDescriptions.length > 0) {
+        pageTemplates = `【页面模板库】
+可用页面模板：
+${templateDescriptions.join('\n')}
+
+注意：当用户明确要求使用特定模板或提到模板相关功能时，应使用对应的预定义事件处理函数。
+特别地，如果用户请求"列表"、"数据列表"、"表格页面"、"数据展示页面"等相关内容时，应优先考虑使用 data-list 模板。
+其他模板也类似：表单页面使用 basic-form 模板，详情页面使用 detail 模板，仪表盘页面使用 dashboard 模板。
+
+`;
+      }
+    }
+  } catch (error) {
+    console.warn('无法读取页面模板', error.message);
+  }
+
+  // 构建完整的prompt，包含结构规则、组件规则、模板库和组件信息
+  const fullPrompt = `${systemPrompt}\n\n${structureRules}${componentRules}${pageTemplates}${componentHint}${baseSchemaText ? `当前已有 Schema（用于参考更新）：\n${baseSchemaText}\n\n` : ''}用户对话需求如下：\n${userText}\n\n【通用事件配置约束】\n- 所有组件的events配置必须包含完整的 "id"（函数名称）、"name"（中文描述）字段\n- 严禁省略或修改这些字段，它们是系统正常运行的必需字段\n- 函数名称必须符合命名规范（如handleSubmit, handleReset等）\n\n请输出更新后的完整 JSON Schema。`;
 
   // 调试：输出拼装的完整prompt内容（仅在开发环境）
   if (process.env.NODE_ENV !== 'production') {
@@ -366,8 +529,114 @@ ${rulesContent.join('\n')}
     console.log('=== End of System Prompt ===');
   }
 
+  // 智能模板匹配函数
+  function findBestMatchingTemplate(userText, templates, templateContents) {
+    const normalizedText = userText.toLowerCase();
+    
+    // 调试：输出用户输入用于匹配
+    console.log('用户输入文本:', userText);
+    console.log('标准化文本', normalizedText);
+    console.log('可用模板数量:', templates.length);
+    
+    // 为每个模板计算匹配分数
+    let bestMatch = null;
+    let bestScore = 0;
+    
+    for (const template of templates) {
+      let score = 0;
+      
+      // 检查模板名称匹配
+      if (normalizedText.includes(template.id) || 
+          normalizedText.includes(template.name.toLowerCase())) {
+        score += 10;
+      }
+      
+      // 检查模板描述匹配
+      if (normalizedText.includes(template.description.toLowerCase())) {
+        score += 5;
+      }
+      
+      // 检查分类匹配
+      if (normalizedText.includes(template.category.toLowerCase())) {
+        score += 8;
+      }
+      
+      // 检查标签匹配
+      if (template.tags) {
+        for (const tag of template.tags) {
+          if (normalizedText.includes(tag.toLowerCase())) {
+            score += 3;
+          }
+        }
+      }
+      
+      // 特定关键词匹配（针对不同模板类型）
+      if (template.id === 'data-list') {
+        const listKeywords = ['列表', '数据', '表格', 'table', 'list', '数据列表', '数据展示', '搜索列表', '数据检查', '记录', '行数'];        for (const keyword of listKeywords) {
+          if (normalizedText.includes(keyword)) {
+            score += 7;
+            break;
+          }
+        }
+      } else if (template.id === 'basic-form') {
+        const formKeywords = ['表单', 'form', '输入', '新建', '创建', '编辑', '注册', '登录', '填写', '字段'];
+        for (const keyword of formKeywords) {
+          if (normalizedText.includes(keyword)) {
+            score += 7;
+            break;
+          }
+        }
+      } else if (template.id === 'detail') {
+        const detailKeywords = ['详情', 'detail', '查看', '展示', '信息', 'profile', '详情页', '详细信息'];
+        for (const keyword of detailKeywords) {
+          if (normalizedText.includes(keyword)) {
+            score += 7;
+            break;
+          }
+        }
+      } else if (template.id === 'dashboard') {
+        const dashboardKeywords = ['仪表盘', 'dashboard', '概览', '统计', '图表', 'kpi', '指标', '监控', '总览'];
+        for (const keyword of dashboardKeywords) {
+          if (normalizedText.includes(keyword)) {
+            score += 7;
+            break;
+          }
+        }
+      }
+      
+      // 调试：输出每个模板的匹配分数
+      console.log(`模板 ${template.id} 匹配分数: ${score}`);
+      
+      // 如果分数大于阈值且是最佳匹配
+      if (score > bestScore && score >= 5) {
+        bestScore = score;
+        bestMatch = template.id;
+      }
+    }
+    
+    if (bestMatch) {
+      console.log('最佳匹配模板', bestMatch, '分数:', bestScore);
+    } else {
+      console.log('未找到足够匹配的模板');
+    }
+    
+    return bestMatch ? { templateId: bestMatch, content: templateContents[bestMatch], score: bestScore } : null;
+  }
+
+  // 尝试匹配最佳模板
+  const matchedTemplateInfo = findBestMatchingTemplate(userText, templateIndex, pageTemplateContents);
+  
+  // 如果检测到匹配的模板，则在提示中加入模板内容，并使用不含示例的结构规则
+  let finalPrompt = fullPrompt;
+  if (matchedTemplateInfo) {
+    console.log('检测到匹配的模板', matchedTemplateInfo.templateId, '匹配分数:', matchedTemplateInfo.score);
+    finalPrompt = `${systemPrompt}\n\n${structureRulesWithoutExample}${componentRules}${pageTemplates}${componentHint}${baseSchemaText ? `当前已有 Schema（用于参考更新）：\n${baseSchemaText}\n\n` : ''}用户对话需求如下：\n${userText}\n\n由于用户请求 "${matchedTemplateInfo.templateId}"模板高度匹配（匹配分数 ${matchedTemplateInfo.score}），请直接使用该模板内容作为基础进行构建，具体模板内容如下：\n\n${matchedTemplateInfo.content}\n\n【重要约束指令】\n1. 必须严格保留模板中的所有事件配置，包括events对象中的每个事件处理函数的 "id"、"name"字段\n2. 禁止修改、删除或重新生成事件的id和name字段，必须原样保留模板中的配置\n3. 只允许根据用户需求调整组件的props属性值、页面标题等业务相关字段\n4. 事件函数的实现代码必须在actions.module.source中对应生成，函数名必须与事件id完全一致\n5. 请严格仅使用提供的专用模板，忽略其他示例，输出更新后的完整 JSON Schema。\n`;
+  } else {
+    console.log('未找到匹配的模板，使用通用生成逻辑');
+  }
+
   try {
-    const result = await callDashScopeAPI(fullPrompt, apiKey, model, temperature);
+    const result = await callDashScopeAPI(finalPrompt, apiKey, model, temperature);
 
     // OpenAI 兼容接口标准响应格式：{ choices: [{ message: { content: string, role?: string } }], usage?: {...} }
     // 增强防御性检查，确保数据结构完整
@@ -396,7 +665,7 @@ ${rulesContent.join('\n')}
     if (!parsed) {
       return res.status(200).json({
         schema: null,
-        error: "模型返回的内容不是有效 JSON（无法解析）",
+        error: "模型返回的内容不是有效的JSON（无法解析）",
         raw: out,
       });
     }
@@ -413,7 +682,7 @@ ${rulesContent.join('\n')}
       name: e?.name,
       code: e?.code,
       status: e?.status ?? e?.response?.status,
-      // 一些实现会把原始原因塞进 cause
+      // 一些实现会把原始原因塞入 cause
       cause: e?.cause ? String(e.cause) : undefined,
     });
   }
